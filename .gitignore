@@ -1,0 +1,5 @@
+a.out
+procsync
+*.o
+.DS_Store
+*.DSYM/
