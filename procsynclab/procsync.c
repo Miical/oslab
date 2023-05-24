@@ -7,13 +7,19 @@
 #include <semaphore.h>
 #include <sys/semaphore.h>
 
-#define PRODUCER_NUM 5
-#define CONSUMER_NUM 5
-#define MAX_ITEMS 100
-#define ITEMS_UNIT 20
+#define PRODUCER_NUM 3
+#define CONSUMER_NUM 3
+#define MAX_ITEMS 1
+#define ITEMS_UNIT 18
 
-sem_t item_lock;
-int items_list[MAX_ITEMS], list_num, item_cnt;
+typedef struct {
+    int buf[MAX_ITEMS];
+    int item_cnt;
+    int front, rear;
+    sem_t *mutex, *slots, *items;
+} itemslist_t;
+
+itemslist_t items_list;
 
 int producer_items[PRODUCER_NUM][ITEMS_UNIT], producer_num[PRODUCER_NUM];
 int consumer_items[CONSUMER_NUM][ITEMS_UNIT], consumer_num[CONSUMER_NUM];
@@ -21,13 +27,16 @@ int consumer_items[CONSUMER_NUM][ITEMS_UNIT], consumer_num[CONSUMER_NUM];
 void *producer_func(void *arg) {
     uint64_t producer_id = (uint64_t) arg;
     for (int i = 0; i < ITEMS_UNIT; i++) {
-        if (!sem_wait(&item_lock)) exit(EXIT_FAILURE);
-        if (list_num != MAX_ITEMS) {
-            items_list[list_num++] = ++item_cnt;
-            producer_items[producer_id][producer_num[producer_id]++] = item_cnt;
-            printf("Producer %lld put item %d\n", producer_id, item_cnt);
-        }
-        if (!sem_post(&item_lock)) exit(EXIT_FAILURE);
+        if (!sem_wait(items_list.slots)) exit(EXIT_FAILURE);
+        if (!sem_wait(items_list.mutex)) exit(EXIT_FAILURE);
+
+        items_list.buf[(++items_list.rear) % MAX_ITEMS] = ++items_list.item_cnt;
+        producer_items[producer_id][producer_num[producer_id]++] = items_list.item_cnt;
+        printf("Producer %lld put item %d\n", producer_id, items_list.item_cnt);
+        printf("rear = %d, front = %d\n", items_list.rear, items_list.front);
+
+        if (!sem_post(items_list.mutex)) exit(EXIT_FAILURE);
+        if (!sem_post(items_list.items)) exit(EXIT_FAILURE);
     }
     return NULL;
 }
@@ -35,12 +44,16 @@ void *producer_func(void *arg) {
 void *consumer_func(void *arg) {
     uint64_t consumer_id = (uint64_t) arg;
     for (int i = 0; i < ITEMS_UNIT; i++) {
-        if (!sem_wait(&item_lock)) exit(EXIT_FAILURE);
-        if (list_num != 0) {
-            consumer_items[consumer_id][consumer_num[consumer_id]++] = items_list[--list_num];
-            printf("Consumer %lld get item %d\n", consumer_id, consumer_items[consumer_id][i]);
-        }
-        if (!sem_post(&item_lock)) exit(EXIT_FAILURE);
+        if (!sem_wait(items_list.items)) exit(EXIT_FAILURE);
+        if (!sem_wait(items_list.mutex)) exit(EXIT_FAILURE);
+
+        int item = items_list.buf[(++items_list.front) % MAX_ITEMS];
+        consumer_items[consumer_id][consumer_num[consumer_id]++] = item;
+        printf("Consumer %lld get item %d\n", consumer_id, item);
+        printf("rear = %d, front = %d\n", items_list.rear, items_list.front);
+
+        if (!sem_post(items_list.mutex)) exit(EXIT_FAILURE);
+        if (!sem_post(items_list.slots)) exit(EXIT_FAILURE);
     }
     return NULL;
 }
@@ -50,7 +63,9 @@ int main() {
     pthread_t producer[PRODUCER_NUM];
 
     // Initialize semaphore.
-    sem_open("item_lock", O_CREAT|O_EXCL, S_IRWXU, 0);
+    items_list.slots = sem_open("slots", O_CREAT|O_EXCL, S_IRWXU, MAX_ITEMS);
+    items_list.mutex = sem_open("mutex", O_CREAT|O_EXCL, S_IRWXU, 1);
+    items_list.items = sem_open("items", O_CREAT|O_EXCL, S_IRWXU, 0);
 
     // Create producer and consumer threads.
     for (int64_t i = 0; i < PRODUCER_NUM; i++) {
@@ -84,19 +99,21 @@ int main() {
     printf("<summary>\n");
     printf("<producer>\n");
     for (int i = 0; i < PRODUCER_NUM; i++) {
-        printf("Producer put %d items: ", producer_num[i]);
+        printf("Producer %d put %d items: ", i, producer_num[i]);
         for (int j = 0; j < producer_num[i]; j++)
             printf("%d ", producer_items[i][j]);
         printf("\n");
     }
     printf("<consumer>\n");
     for (int i = 0; i < CONSUMER_NUM; i++) {
-        printf("Consumer get %d items: ", consumer_num[i]);
+        printf("Consumer %d get %d items: ", i, consumer_num[i]);
         for (int j = 0; j < consumer_num[i]; j++)
             printf("%d ", consumer_items[i][j]);
         printf("\n");
     }
 
-    sem_unlink("item_lock");
+    sem_unlink("slots");
+    sem_unlink("mutex");
+    sem_unlink("items");
     return 0;
 }
