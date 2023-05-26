@@ -1,5 +1,8 @@
 a.out
 procsync
+create_shm
+proc1
+proc2
 *.o
 .DS_Store
 *.DSYM/
