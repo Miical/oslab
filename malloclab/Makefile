@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -O2 -arch x86_64 -m32 -DDEBUG
+CFLAGS = -g -O2 -m32 -DDEBUG
 
 OBJS = main.o mm.o memlib.o 
 

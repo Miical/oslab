@@ -174,9 +174,7 @@ static void *extend_heap(size_t words) {
 
 static void *find_fit(size_t asize) {
     for (int id = find_id(asize); id < MAX_N; id++) {
-        fprintf(stderr, "%d\n", id);
         void *bp = HEAD_PTR(id);
-        fprintf(stderr, "ok\n");
         while (bp != NULL) {
             if (asize <= GET_SIZE(HDRP(bp)))
                 return bp;
